@@ -58,6 +58,9 @@ class iCubPushGymEnv(gym.Env):
         self._target_dist_min = 0.03
         self._rnd_obj_pose = rnd_obj_pose
         self._reward_type = reward_type
+        self._init_dist_hand_obj = []
+        self._max_dist_obj_tg = []
+        self._dist_to_target = []
 
         # Initialize PyBullet simulator
         self._p = p
@@ -125,6 +128,7 @@ class iCubPushGymEnv(gym.Env):
 
         self._init_dist_hand_obj = goal_distance(np.array(self._observation[0:3]), np.array(obj_pose))
         self._max_dist_obj_tg = goal_distance(np.array(obj_pose), np.array(self._tg_pose))
+        self._dist_to_target = goal_distance(np.array(obj_pose), np.array(self._tg_pose))
 
         return np.array(self._observation)
 
@@ -273,6 +277,7 @@ class iCubPushGymEnv(gym.Env):
         handState = p.getLinkState(self._icub.icubId, self._icub.motorIndices[-1], computeLinkVelocity=0)
         handPos = handState[0]
         objPos, _ = p.getBasePositionAndOrientation(self._objID)
+
         d1 = goal_distance(np.array(handPos), np.array(objPos))
         d2 = goal_distance(np.array(objPos), np.array(self._tg_pose))
 
@@ -294,6 +299,21 @@ class iCubPushGymEnv(gym.Env):
 
             if d2 <= self._target_dist_min:
                 reward += np.float32(1000.0)
+
+        elif self._reward_type is 2:
+            # only d2: target-objects
+            # reward = (-curr_d2) - (-prev_d2)
+            reward = (-10*d2) - (-10*self._dist_to_target)
+            self._dist_to_target = d2
+
+            if d2 <= self._target_dist_min:
+                reward += np.float32(1000.0)
+
+            #stuck_joint_cost = 0
+            #robot_state = self._icub.getObservation()
+            #for j in robot_state[-10:]:
+            #    if np.abs(j) - 1 < 0.01:
+            #        stuck_joint_cost += -0.1
 
         return reward
 

@@ -19,18 +19,19 @@ class iCubEnv:
         self.useOrientation = useOrientation
         self.useSimulation = 1
 
-        self.indices_torso = range(12,15)
-        self.indices_left_arm = range(15,22)
-        self.indices_right_arm = range(25,32)
-        self.indices_head = range(22,25)
+        self.indices_torso = range(12, 15)
+        self.indices_left_arm = range(15, 22)
+        self.indices_right_arm = range(25, 32)
+        self.indices_head = range(22, 25)
 
         self.home_pos_torso = [0.0, 0.0, 0.0] #degrees
         self.home_pos_head = [0.47, 0, 0]
 
         self.home_left_arm = [-29.4, 40.0, 0, 70, 0, 0, 0]
         self.home_right_arm = [-29.4, 40.0, 0, 70, 0, 0, 0]
+        self.hand_pose = []
 
-        self.workspace_lim = [[0.25,0.52],[-0.2,0.2],[0.5,1.0]]
+        self.workspace_lim = [[0.2, 0.52], [-0.2, 0.2], [0.5, 1.0]]
 
         self.control_arm = arm if arm =='r' or arm =='l' else 'l' #left arm by default
 
@@ -41,32 +42,32 @@ class iCubEnv:
         self.numJoints = p.getNumJoints(self.icubId)
 
         # set constraint between base_link and world
-        self.constr_id = p.createConstraint(self.icubId,-1,-1,-1,p.JOINT_FIXED,[0,0,0],[0,0,0],
+        self.constr_id = p.createConstraint(self.icubId, -1, -1, -1, p.JOINT_FIXED, [0, 0, 0], [0, 0, 0],
                                  [p.getBasePositionAndOrientation(self.icubId)[0][0],
                                   p.getBasePositionAndOrientation(self.icubId)[0][1],
-                                  p.getBasePositionAndOrientation(self.icubId)[0][2]*1.2],
+                                  p.getBasePositionAndOrientation(self.icubId)[0][2]],
                                   p.getBasePositionAndOrientation(self.icubId)[1])
 
         ## Set all joints initial values
-        for count,i in enumerate(self.indices_torso):
+        for count, i in enumerate(self.indices_torso):
             p.resetJointState(self.icubId, i, self.home_pos_torso[count]/180*m.pi)
             p.setJointMotorControl2(self.icubId, i, p.POSITION_CONTROL,
                 targetPosition=self.home_pos_torso[count]/180*m.pi,
                 targetVelocity=0.0, positionGain=0.25, velocityGain=0.75, force=50)
 
-        for count,i in enumerate(self.indices_head):
+        for count, i in enumerate(self.indices_head):
             p.resetJointState(self.icubId, i, self.home_pos_head[count]/180*m.pi)
             p.setJointMotorControl2(self.icubId, i, p.POSITION_CONTROL,
                 targetPosition=self.home_pos_head[count]/180*m.pi,
                 targetVelocity=0.0, positionGain=0.25, velocityGain=0.75, force=50)
 
-        for count,i in enumerate(self.indices_left_arm):
+        for count, i in enumerate(self.indices_left_arm):
             p.resetJointState(self.icubId, i, self.home_left_arm[count]/180*m.pi)
             p.setJointMotorControl2(self.icubId, i, p.POSITION_CONTROL,
                 targetPosition=self.home_left_arm[count]/180*m.pi,
                 targetVelocity=0.0, positionGain=0.25, velocityGain=0.75, force=50)
 
-        for count,i in enumerate(self.indices_right_arm):
+        for count, i in enumerate(self.indices_right_arm):
             p.resetJointState(self.icubId, i, self.home_right_arm[count]/180*m.pi)
             p.setJointMotorControl2(self.icubId, i, p.POSITION_CONTROL,
                 targetPosition=self.home_right_arm[count]/180*m.pi,
@@ -74,18 +75,8 @@ class iCubEnv:
 
         self.ll, self.ul, self.jr, self.rs = self.getJointRanges()
 
-        # set initial hand pose
-        if self.useInverseKinematics:
-            if self.control_arm =='l':
-                self.handPos = [0.25,0.35,0.85] # x,y,z
-                self.handOrn = [0.3,0.4,0.35] # roll,pitch,yaw
-            else:
-                self.handPos = [0.25,-0.35,0.85] # x,y,z
-                self.handOrn = [0.3, -0.4, 2.8] # roll,pitch,yaw
-
-
         # save indices of only the joints to control
-        control_arm_indices = self.indices_left_arm if self.control_arm =='l' else self.indices_right_arm
+        control_arm_indices = self.indices_left_arm if self.control_arm == 'l' else self.indices_right_arm
         self.motorIndices = [i for i in self.indices_torso] + [j for j in control_arm_indices]
 
         self.motorNames = []
@@ -127,21 +118,24 @@ class iCubEnv:
         return len(self.getObservation())
 
     def getObservation(self):
-        #Cartesian world pos/orn of left hand center of mass
+        # Cartesian world pos/orn of hand center of mass
         observation = []
-        state = p.getLinkState(self.icubId, self.motorIndices[-1],computeLinkVelocity=1)
+        state = p.getLinkState(self.icubId, self.motorIndices[-1], computeLinkVelocity=1)
         pos = state[0]
-        orn = state[1]
-        euler = p.getEulerFromQuaternion(orn)
+        orn = p.getEulerFromQuaternion(state[1])
+        if not self.hand_pose:
+            self.hand_pose[:3] = pos
+            self.hand_pose[3:6] = orn
+
         velL = state[6]
         velA = state[7]
 
         observation.extend(list(pos))
-        observation.extend(list(euler)) #roll, pitch, yaw
+        observation.extend(list(orn)) #roll, pitch, yaw
         observation.extend(list(velL))
-        #observation.extend(list(velA))
+        observation.extend(list(velA))
 
-        jointStates = p.getJointStates(self.icubId,self.motorIndices)
+        jointStates = p.getJointStates(self.icubId, self.motorIndices)
         jointPoses = [x[0] for x in jointStates]
         observation.extend(list(jointPoses))
 
@@ -151,34 +145,33 @@ class iCubEnv:
 
         if(self.useInverseKinematics):
 
-            if not len(action)>=3:
-                raise AssertionError('number of action commands must be equal to 3 at least (dx,dy,dz)',len(action))
+            if not len(action) >= 3:
+                raise AssertionError('number of action commands must be equal to 3 at least (dx,dy,dz)', len(action))
 
             dx, dy, dz = action[:3]
 
-            self.handPos[0] = min(self.workspace_lim[0][1], max(self.workspace_lim[0][0], self.handPos[0] + dx))
-            self.handPos[1] = min(self.workspace_lim[1][1], max(self.workspace_lim[1][0], self.handPos[1] + dy))
-            self.handPos[2] = min(self.workspace_lim[2][1], max(self.workspace_lim[2][0], self.handPos[2] + dz))
+            self.hand_pose[0] = min(self.workspace_lim[0][1], max(self.workspace_lim[0][0], dx))
+            self.hand_pose[1] = min(self.workspace_lim[1][1], max(self.workspace_lim[1][0], dy))
+            self.hand_pose[2] = min(self.workspace_lim[2][1], max(self.workspace_lim[2][0], dz))
 
             if not self.useOrientation:
-                quat_orn = p.getQuaternionFromEuler(self.handOrn) #[]
+                quat_orn = p.getQuaternionFromEuler(self.handOrn)
 
             elif len(action) is 6:
                 droll, dpitch, dyaw = action[3:]
+                self.hand_pose[3] = min(m.pi, max(-m.pi, droll))
+                self.hand_pose[4] = min(m.pi, max(-m.pi, dpitch))
+                self.hand_pose[5] = min(m.pi, max(-m.pi, dyaw))
 
-                self.handOrn[0] = min(m.pi, max(-m.pi, self.handOrn[0] + droll))
-                self.handOrn[1] = min(m.pi, max(-m.pi, self.handOrn[1] + dpitch))
-                self.handOrn[2] = min(m.pi, max(-m.pi, self.handOrn[2] + dyaw))
-
-                quat_orn = p.getQuaternionFromEuler(self.handOrn)
+                quat_orn = p.getQuaternionFromEuler(self.hand_pose[3:6])
 
             else:
-                quat_orn = p.getLinkState(self.icubId,self.motorIndices[-3])[5]
+                quat_orn = p.getLinkState(self.icubId, self.motorIndices[-3])[5]
 
             # compute joint positions with IK
-            jointPoses = p.calculateInverseKinematics(self.icubId, self.motorIndices[-1],self.handPos,quat_orn)
+            jointPoses = p.calculateInverseKinematics(self.icubId, self.motorIndices[-1], self.hand_pose[:3], quat_orn)
 
-            if (self.useSimulation):
+            if self.useSimulation:
                 for i in range(self.numJoints):
                     jointInfo = p.getJointInfo(self.icubId, i)
                     if jointInfo[3] > -1:
@@ -191,7 +184,7 @@ class iCubEnv:
                                                 velocityGain=0.75,
                                                 force=50)
             else:
-                #reset the joint state (ignoring all dynamics, not recommended to use during simulation)
+                # reset the joint state (ignoring all dynamics, not recommended to use during simulation)
                 for i in range(self.numJoints):
                     p.resetJointState(self.icubId, i, jointPoses[i])
 
@@ -213,3 +206,28 @@ class iCubEnv:
                                         positionGain=0.25,
                                         velocityGain=0.75,
                                         force=50)
+
+    def debug_gui(self):
+
+        ws = self.workspace_lim
+        p1 = [ws[0][0], ws[1][0], ws[2][0]]  # xmin,ymin
+        p2 = [ws[0][1], ws[1][0], ws[2][0]]  # xmax,ymin
+        p3 = [ws[0][1], ws[1][1], ws[2][0]]  # xmax,ymax
+        p4 = [ws[0][0], ws[1][1], ws[2][0]]  # xmin,ymax
+
+        p.addUserDebugLine(p1, p2, lineColorRGB=[0, 0, 1], lineWidth=2.0, lifeTime=0)
+        p.addUserDebugLine(p2, p3, lineColorRGB=[0, 0, 1], lineWidth=2.0, lifeTime=0)
+        p.addUserDebugLine(p3, p4, lineColorRGB=[0, 0, 1], lineWidth=2.0, lifeTime=0)
+        p.addUserDebugLine(p4, p1, lineColorRGB=[0, 0, 1], lineWidth=2.0, lifeTime=0)
+
+        p.addUserDebugLine([0, 0, 0], [0.3, 0, 0], [1, 0, 0], parentObjectUniqueId=self.icubId, parentLinkIndex=-1)
+        p.addUserDebugLine([0, 0, 0], [0, 0.3, 0], [0, 1, 0], parentObjectUniqueId=self.icubId, parentLinkIndex=-1)
+        p.addUserDebugLine([0, 0, 0], [0, 0, 0.3], [0, 0, 1], parentObjectUniqueId=self.icubId, parentLinkIndex=-1)
+
+        p.addUserDebugLine([0, 0, 0], [0.1, 0, 0], [1, 0, 0], parentObjectUniqueId=self.icubId, parentLinkIndex=self.indices_right_arm[-1])
+        p.addUserDebugLine([0, 0, 0], [0, 0.1, 0], [0, 1, 0], parentObjectUniqueId=self.icubId, parentLinkIndex=self.indices_right_arm[-1])
+        p.addUserDebugLine([0, 0, 0], [0, 0, 0.1], [0, 0, 1], parentObjectUniqueId=self.icubId, parentLinkIndex=self.indices_right_arm[-1])
+
+        p.addUserDebugLine([0, 0, 0], [0.1, 0, 0], [1, 0, 0], parentObjectUniqueId=self.icubId, parentLinkIndex=self.indices_left_arm[-1])
+        p.addUserDebugLine([0, 0, 0], [0, 0.1, 0], [0, 1, 0], parentObjectUniqueId=self.icubId, parentLinkIndex=self.indices_left_arm[-1])
+        p.addUserDebugLine([0, 0, 0], [0, 0, 0.1], [0, 0, 1], parentObjectUniqueId=self.icubId, parentLinkIndex=self.indices_left_arm[-1])
