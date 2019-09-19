@@ -45,7 +45,7 @@ class iCubEnv:
         self.constr_id = p.createConstraint(self.icubId, -1, -1, -1, p.JOINT_FIXED, [0, 0, 0], [0, 0, 0],
                                  [p.getBasePositionAndOrientation(self.icubId)[0][0],
                                   p.getBasePositionAndOrientation(self.icubId)[0][1],
-                                  p.getBasePositionAndOrientation(self.icubId)[0][2]],
+                                  p.getBasePositionAndOrientation(self.icubId)[0][2]*1.2],
                                   p.getBasePositionAndOrientation(self.icubId)[1])
 
         ## Set all joints initial values
